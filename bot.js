@@ -1,29 +1,103 @@
-const { match } = require('assert');
-const { EmbedBuilder, Client, GatewayIntentBits, time } = require('discord.js');
-const Discord = require("discord.js");
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
-const fs = require('fs');
+const { EmbedBuilder, Client, GatewayIntentBits } = require('discord.js');
+const fsp = require('fs').promises;
+const fs = require('fs')
 const path = require('path');
 
-const token = 'TOKEN';
-const logChannelID = '1255266356455018506'
-let logChannel;
-let embedColor = "78DFEA";
-const pugsChannelID = '1265099445935280149';
-let pugsChannel;
-let pugsPlayers = [];
-const ALLOWED_USERS = ['429302329188286495', '646251699706527745', '732178580729102359'];
 
-client.once('ready', () => {
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+
+const configFile = "config.json";
+const token = "TOKEN";
+
+let logChannelID, pugsChannelID;
+let logChannel, pugsChannel;
+let pugsPlayers = [];
+let scheduledRemovals = [];
+
+async function readConfig() {
+    try {
+        const jsonString = await fsp.readFile(configFile, 'utf8');
+        return JSON.parse(jsonString);
+    } catch (err) {
+        console.error('Error reading or parsing file', err);
+        throw err; // Ensure errors are propagated
+    }
+}
+
+async function writeConfig(data) {
+    try {
+        await fsp.writeFile(configFile, JSON.stringify(data, null, 2), 'utf8');
+        console.log('File updated successfully');
+    } catch (err) {
+        console.error('Error writing file', err);
+    }
+}
+
+async function addAllowedUser(newUser) {
+    const data = await readConfig();
+    if (!data.allowedUsers.includes(newUser)) {
+        data.allowedUsers.push(newUser);
+        await writeConfig(data);
+    }
+}
+
+async function isUserAllowed(user) {
+    const data = await readConfig();
+    return data.allowedUsers.includes(user);
+}
+
+async function setLogChannel(channelID) {
+    const data = await readConfig();
+    data.logChannelID = channelID;
+    await writeConfig(data);
+}
+
+async function getLogChannel() {
+    const data = await readConfig();
+    return data.logChannelID;
+}
+
+async function setPugsChannel(channelID) {
+    const data = await readConfig();
+    data.pugsChannelID = channelID;
+    await writeConfig(data);
+}
+
+async function getPugsChannel() {
+    const data = await readConfig();
+    return data.pugsChannelID;
+}
+
+async function setEmbedColor(colorCode) {
+    const data = await readConfig();
+    data.embedColor = colorCode;
+    await writeConfig(data);
+}
+
+async function getEmbedColor() {
+    const data = await readConfig();
+    return data.embedColor;
+}
+
+client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
+
+    logChannelID = await getLogChannel();
+    pugsChannelID = await getPugsChannel();
 
     logChannel = client.channels.cache.get(logChannelID);
     if (!logChannel) {
         console.error('Log channel not found');
     }
+
+    pugsChannel = client.channels.cache.get(pugsChannelID);
+    if (!pugsChannel) {
+        console.error('PUGs channel not found');
+    }
 });
 
-const scheduledRemovals = {};
+client.login(token).catch(err => console.error('Failed to login', err));
+
 
 function removePlayerFromPugs(players, player) {
     const index = players.indexOf(player);
@@ -65,7 +139,7 @@ client.on('messageCreate', async message => {
 
     if (logChannel) {
         const embed = new EmbedBuilder().setTitle(`<#${message.channelId}>`)
-        .setColor(embedColor)
+        .setColor(await getEmbedColor())
         .setDescription(`${message.content}`)
         .setAuthor({
             name: message.author.username,
@@ -74,24 +148,60 @@ client.on('messageCreate', async message => {
         logChannel.send({embeds: [embed]})
             .catch(console.error); 
         }
+    
+    if (message.content.startsWith("!setLogChannel")) {
 
-    else if (message.content === "!schedule") {
-        const embed = new EmbedBuilder().setTitle('Saltwater Showdown Schedule')
-        .setColor('#7289da')
-        .setDescription('Group Stage: July 15th\n\nPlayoffs: August 5th\nGrandfinals: To be decided')
+        if (!await isUserAllowed(message.author.id)) {
+            message.channel.send("You don't have permission to perform this action");
+            return;
+        }
+        await setLogChannel(message.channel.id);
+    }
+
+    else if (message.content.startsWith("!setPugsChannel")) {
+
+        if (!await isUserAllowed(message.author.id)) {
+            message.channel.send("You don't have permission to perform this action");
+            return;
+        }
+        await setPugsChannel(message.channel.id);
+    }
+
+    else if (message.content.startsWith("!setEmbedColor")) {
+
+        let parts = message.content.split(' ');
+
+        if (!await isUserAllowed(message.author.id)) {
+            message.channel.send("You don't have permission to perform this action");
+            return;
+        }
+        await setEmbedColor(parts[1]);
+        const embed = new EmbedBuilder().setTitle('**Title**')
+        .setColor(await getEmbedColor())
+        .setDescription('You changed the embed color! Good job pookiebear');
         message.channel.send({embeds: [embed]});
-    }   
+    }
 
-    if (message.content === "!pugs help" || message.content == "!pugs") {
+    else if (message.content.startsWith("!addAdmin")) {
+        let parts = message.content.split(' ');
+        if (!await isUserAllowed(message.author.id)) {
+            message.channel.send("You don't have permission to perform this action");
+            return;
+        }
+        await addAllowedUser(parts[1].replace("<", "").replace(">", "").replace("@", ""));
+        message.channel.send("Admin has been added");
+    }
+
+    else if (message.content === "!pugs help" || message.content == "!pugs") {
         const embed = new EmbedBuilder().setTitle('Saltwater Showdown PUGs Bot Guide')
-        .setColor(embedColor)
+        .setColor(await getEmbedColor())
         .setDescription('!pugs join -> Join Pugs\n\n!pugs quit -> Quit Pugs\n\n!pugs list -> List all currently signed up players\n\n!pugs rules -> Get the format and rules of our PUGs\n\nYou are removed from the PUGs list an hour after signing up.\n\nEveryone on the list will be pinged once 10 players sign up.');
         message.channel.send({embeds: [embed]});
     }   
 
     else if (message.content === "!pugs rules") {
         const embed = new EmbedBuilder().setTitle('**How to PUG**')
-        .setColor(embedColor)
+        .setColor(await getEmbedColor())
         .setDescription('- 2 captains have to be picked\n- The captains join the pick room\n\n- The captains decide on sides\n\n- Captain A picks 1 player\n- Captain B picks 1 player\n- Captain A picks 2 players\n- Captain B picks 2 players\n- Captain A picks 2 players\n- Captain B picks 2 players\n- Captain A picks the gamemode\n- Captain B picks a map');
         message.channel.send({embeds: [embed]});
     }
@@ -156,7 +266,7 @@ client.on('messageCreate', async message => {
         }
 
         const embed = new EmbedBuilder().setTitle('PUGs Player List')
-        .setColor(embedColor)
+        .setColor(await getEmbedColor())
         .setDescription(str);
         message.channel.send({embeds: [embed]});
 
@@ -167,35 +277,92 @@ client.on('messageCreate', async message => {
         let parts = message.content.split(' ');
 
         if (!parts[1]) {
-            message.channel.send('```!pstats usage: <Player Name>```');
+            message.channel.send('```!pstats usage: <Player Name> [Hero Name]```');
             return;
         }
-        
-        const response = await fetch(`http://localhost:8080/getPlayerStats?player=${parts[1]}`);
-    
-        // Check if response is OK
-        if (!response.ok) {
-          throw new Error(`Network response was not ok: ${response.statusText}`);
+
+        if (parts[2]) {
+
+            const response = await fetch(`http://localhost:8080/hStats?player=${parts[1]}&hero=${parts[2]}`);
+            const data = await response.json();
+
+            const embed = new EmbedBuilder()
+            .setTitle(parts[1] + " on " + parts[2])
+            .setColor(await getEmbedColor())
+            .setDescription(data.message || 'No data message found');
+            
+            await message.channel.send({ embeds: [embed] });
+            return;
+
         }
-        
-        // Parse JSON response
+
+        const response = await fetch(`http://localhost:8080/pStats?player=${parts[1]}`);
         const data = await response.json();
-        
-        // Create embed and send message
+
         const embed = new EmbedBuilder()
-          .setTitle(parts[1])
-          .setColor(embedColor)
-          .setDescription(data.message || 'No data message found');
+        .setTitle(parts[1])
+        .setColor(await getEmbedColor())
+        .setDescription(data.message || 'No data message found');
         
         await message.channel.send({ embeds: [embed] });
-        
+        return;
+    
     }
 
-   
+    else if (message.content.startsWith("!tstats")) {
+
+        let parts = message.content.split(' ');
+
+        if (!parts[1]) {
+            message.channel.send('```!tstats usage: <Team Name> [Map Name] -- Replace spaces with "_"```');
+            return;
+        }
+
+        if (parts[2]) {
+
+            const response = await fetch(`http://localhost:8080/tmStats?team=${parts[1]}&map=${parts[2]}`);
+            const data = await response.json();
+
+            const embed = new EmbedBuilder()
+            .setTitle(parts[1].replace('_', ' ') + " on " + parts[2].replace('_', ' '))
+            .setColor(await getEmbedColor())
+            .setDescription(data.message || 'No data message found');
+            
+            await message.channel.send({ embeds: [embed] });
+            return;
+
+        }
+
+        const response = await fetch(`http://localhost:8080/tStats?team=${parts[1]}`);
+        const data = await response.json();
+
+        const embed = new EmbedBuilder()
+        .setTitle(parts[1].replace('_', ' '))
+        .setColor(await getEmbedColor())
+        .setDescription(data.message || 'No data message found');
+        
+        await message.channel.send({ embeds: [embed] });
+        return;
+    
+    }
+
+    else if (message.content.startsWith('!compareStats')) {
+        let parts = message.content.split(' ');
+        if (parts.length !== 3) {
+            message.channel.send('Usage: !compareStats <Player 1> <Player 2>');
+            return;
+        }
+
+        const response = await fetch(`http://localhost:8080/compareStats?player1=${parts[1]}&player2=${parts[2]}`);
+
+        const data = await response.json();
+        message.channel.send(`\`\`\`${data.message}\`\`\``);
+    }
+
         // Check if the message starts with !uploadMap
     else if (message.content.startsWith('!uploadMap')) {
           // Ensure the user is one of the allowed users
-          if (!ALLOWED_USERS.includes(message.author.id)) {
+          if (!await isUserAllowed(message.author.id)) {
             return message.channel.send('You are not authorized to use this command.');
           }
       
@@ -224,7 +391,7 @@ client.on('messageCreate', async message => {
                 await downloadFile(attachment.url, filePath);
       
                 // Make the fetch request
-                const response = await fetch(`http://localhost:8080/createMap?matchID=${matchID}&winner=${winner}&map=${mapName}&fileName=${fileName}`);
+                const response = await fetch(`http://localhost:8080/uploadMap?matchID=${matchID}&winner=${winner}&map=${mapName}&fileName=${fileName}`);
                 if (!response.ok) {
                   message.channel.send('Internal Server Error');
                   return;
@@ -242,9 +409,9 @@ client.on('messageCreate', async message => {
           });
         }
 
-      else if (message.content.startsWith('!createMatch')) {
+        else if (message.content.startsWith('!createMatch')) {
             // Ensure the user is one of the allowed users
-            if (!ALLOWED_USERS.includes(message.author.id)) {
+            if (!await isUserAllowed(message.author.id)) {
               return message.channel.send('You are not authorized to use this command.');
             }
         
@@ -266,23 +433,45 @@ client.on('messageCreate', async message => {
               console.error('Error:', error);
               message.channel.send('An error occurred while creating the match.');
             }
-          }
+        }
 
+        else if (message.content.startsWith("!updateLeaderboards")) {
+            if (!await isUserAllowed(message.author.id)) {
+                return message.channel.send('You are not authorized to use this command.');
+              }
+            
+              try {
+                // Make the fetch request
+                const response = await fetch(`http://localhost:8080/updateLeaderboards`);
+                if (!response.ok) {
+                  throw new Error(`Network response was not ok: ${response.statusText}`);
+                }
+          
+                const data = await response.json();
+                message.channel.send(`${data.message}`);
+              } catch (error) {
+                console.error('Error:', error);
+                message.channel.send('An error occured updating the leaderboards.');
+              }
+        }
+        
         else if (message.content === '!commands' || message.content === '!help') {
 
             const bendixID = "429302329188286495";
             const bendix = await client.users.fetch(bendixID);
         
-                const embed = new EmbedBuilder().setTitle('The Lagoon Bot Commands')
+                const embed = new EmbedBuilder().setTitle('Bot Commands')
                 .setAuthor({
                     name: bendix.username,
                     iconURL: bendix.displayAvatarURL({ dynamic: true }),
                 })
-                .setColor(embedColor)
+                .setColor(await getEmbedColor())
                 .setDescription('Commands:\n\n'
                 + '!help / !commands: Lists all available bot commands\n'
                 + '!pugs help: Lists all available pugs commands\n'
-                + '!pstats <Player OW Name>: Returns player stats\n\n'
+                + '!comparestats <Player 1 OW Name> <Player 2 OW Name>: Compares two players\n'
+                + '!tstats <Team> (optional: <Map>): Returns team stats -- Spaces replaced by underscore\n'
+                + '!pstats <Player OW Name> (optional: <Hero>): Returns player stats -- Spaces replaced by underscore\n\n'
                 + '!rules / !rulebook\n'
                 + '!dates / !schedule\n'
                 + '!standings\n'
@@ -293,28 +482,51 @@ client.on('messageCreate', async message => {
                 message.channel.send({embeds: [embed]});
             }
 
+        else if (message.content === '!admin') {
+
+            const bendixID = "429302329188286495";
+            const bendix = await client.users.fetch(bendixID);
+        
+                const embed = new EmbedBuilder().setTitle('Admin Commands')
+                .setAuthor({
+                    name: bendix.username,
+                    iconURL: bendix.displayAvatarURL({ dynamic: true }),
+                })
+                .setColor(await getEmbedColor())
+                .setDescription('Commands:\n\n'
+                + '!setLogChannel\n'
+                + '!setPugsChannel\n'
+                + '!setEmbedColor <Hexcode without #>\n'
+                + '!updateLeaderboards\n'
+                + '!addAdmin\n\n'
+                + '!createMatch [Team1] [Team2] [0 / 1 if GF] -> spits out matchID REPLACE SPACE WITH UNDERSCORE\n'
+                + '!uploadMap [matchID] [Map] [Winner] REPLACE SPACE WITH UNDERSCORE'
+                )
+                message.channel.send({embeds: [embed]});
+        }
+
         else if (message.content === '!rules' || message.content === '!rulebook') {
-            message.channel.send("Click here to view our rules:\nhttps://docs.google.com/document/d/1AYav_lBA2OHSC5Djm9pmyNDqC_rusuHbLUtcmIDFqv8/edit?usp=sharing");
+            message.channel.send("Insert rulebook");
         }
     
         else if (message.content === '!dates' || message.content === '!schedule') {
-            message.channel.send('Group Stages start July 15th.\n\nPlayoffs start August 5th. Grandfinals date is still up for decision.')
+            message.channel.send('Insert schedule')
         }
     
         else if (message.content === '!standings') {
-            message.channel.send("https://docs.google.com/spreadsheets/d/1Xnfz2-KbzwwhOC4E47WvBvK7CxaX9Tq_XAHcOwSfjBU/edit?usp=sharing");
+            message.channel.send("Insert standings link");
         }
     
         else if (message.content === '!signup') {
-            message.channel.send("Click here to sign up your team:\nhttps://forms.gle/zQFQKAK1ozn9XEZo6");
+            message.channel.send("Insert signup form");
         }
     
         else if (message.content === '!report') {
-            message.channel.send("Click here to submit a report:\nhttps://forms.gle/B14dDynVwfiRCvEm8");
+            message.channel.send("Insert report form");
         }
     
         else if (message.content === '!appeal') {
-            message.channel.send("Click here to appeal a staff decision:\nhttps://forms.gle/nPx5UzrRyixuVuQj8")
+            message.channel.send("Insert appeal form")
         }
     
         else if (message.content === '!staff') {
@@ -326,7 +538,7 @@ client.on('messageCreate', async message => {
         }
     
         else if (message.content === '!twitch') {
-            message.channel.send("https://twitch.tv/saltwatershowdown");
+            message.channel.send("Insert twitch link");
         }
     
         else if (message.content === '!twitter') {
@@ -348,14 +560,6 @@ client.on('messageCreate', async message => {
         else if (message.content === '!goat') {
             message.channel.send("```Bendix.```");
         }
-    
-        else if (message.content === '!podcast' || message.content === '!news' || message.content === '!saltynewsnetwork' || message.content === '!snn') {
-            message.channel.send("We run a weekly news show, the Salty News Network, to keep our members updated on all the news surrounding the tournament! Ask our staff for more info and let us know if you want to get involved!");
-        }
-    
-        else if (message.content === '!lagoon' || message.content === '!thelagoon' || message.content === '!org') {
-            message.channel.send("This tournament is hosted by The Lagoon! Insert discord link");
-        }
 
         else if (message.content.startsWith('!')) {
             const bendixID = "429302329188286495";
@@ -366,7 +570,7 @@ client.on('messageCreate', async message => {
                     name: bendix.username,
                     iconURL: bendix.displayAvatarURL({ dynamic: true }),
                 })
-                .setColor(embedColor)
+                .setColor(await getEmbedColor())
                 .setDescription("Use !help or !commands for a list of commands.");
                 message.channel.send({embeds: [embed]});
         }
