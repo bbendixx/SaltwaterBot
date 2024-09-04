@@ -100,16 +100,19 @@ func CreateDatabase() {
 	CREATE TABLE IF NOT EXISTS playerHero (
 		player TEXT,
 		hero TEXT,
-		time INTEGER,
+		damageDealt REAL,
+		damageTaken REAL,
+		deaths REAL,
+		finalBlows REAL,
+		eliminations REAL,
+		soloKills REAL,
+		healingDealt REAL,
+		environmentalKills REAL,
+		offensiveAssists REAL,
+		ultsUsed REAL,
+		durationInSeconds INTEGER,
 		PRIMARY KEY (player, Hero),
 		FOREIGN KEY (player) REFERENCES player(name)
-	);
-
-	CREATE TABLE IF NOT EXISTS counting (
-		channelID INTEGER,
-		lastNumberUserID INTEGER,
-		currentNumber INTEGER,
-		timesRuined INTEGER
 	);
     `
 

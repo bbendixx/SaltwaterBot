@@ -10,17 +10,50 @@ import (
 func Handler(c *gin.Context) {
 
 	if strings.HasPrefix(c.Request.URL.Path, "/createMatch") {
-		CreateMatch(c)
+		response := CreateMatch(c)
+		c.JSON(http.StatusOK, gin.H{"message": response})
 		return
 	}
 
-	if strings.HasPrefix(c.Request.URL.Path, "/createMap") {
-		SaveMapStats(c)
+	if strings.HasPrefix(c.Request.URL.Path, "/uploadMap") {
+		response := UploadMap(c)
+		c.JSON(http.StatusOK, gin.H{"message": response})
 		return
 	}
 
-	if strings.HasPrefix(c.Request.URL.Path, "/getPlayerStats") {
-		GetPlayerStats(c)
+	if strings.HasPrefix(c.Request.URL.Path, "/pStats") {
+		response := PStats(c)
+		c.JSON(http.StatusOK, gin.H{"message": response})
+		return
+	}
+
+	if strings.HasPrefix(c.Request.URL.Path, "/hStats") {
+		response := PStatsHero(c)
+		c.JSON(http.StatusOK, gin.H{"message": response})
+		return
+	}
+
+	if strings.HasPrefix(c.Request.URL.Path, "/tStats") {
+		response := TStats(c)
+		c.JSON(http.StatusOK, gin.H{"message": response})
+		return
+	}
+
+	if strings.HasPrefix(c.Request.URL.Path, "/tmStats") {
+		response := TStatsMap(c)
+		c.JSON(http.StatusOK, gin.H{"message": response})
+		return
+	}
+
+	if strings.HasPrefix(c.Request.URL.Path, "/compareStats") {
+		response := CompareStats(c)
+		c.JSON(http.StatusOK, gin.H{"message": response})
+		return
+	}
+
+	if strings.HasPrefix(c.Request.URL.Path, "/updateLeaderboards") {
+		response := UpdateLeaderboards()
+		c.JSON(http.StatusOK, gin.H{"message": response})
 		return
 	}
 
@@ -30,4 +63,3 @@ func Handler(c *gin.Context) {
 	})
 
 }
-
